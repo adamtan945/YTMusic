@@ -575,47 +575,72 @@ class MenuBarService: NSObject, NSMenuDelegate {
                 object: scrollView.contentView
             )
             scrollView.contentView.postsBoundsChangedNotifications = true
+
+            // 依還原後的捲動位置決定初始顯示（捲到頂不顯示上箭頭、到底不顯示下箭頭）
+            updateQueueScrollIndicators()
         }
 
         return container
     }
 
-    // MARK: - ▲▼ 指示器（純圖示，無漸層）
+    // MARK: - ▲▼ 指示器（膠囊底＋箭頭，捲到頂/底時隱藏）
 
     private func createScrollIndicator(frame: NSRect, chevronName: String) -> NSView {
         let view = NSView(frame: frame)
 
-        let iconSize: CGFloat = 10
+        let capsuleWidth: CGFloat = 44
+        let capsuleHeight: CGFloat = 15
+        let capsule = NSVisualEffectView(frame: NSRect(
+            x: (frame.width - capsuleWidth) / 2,
+            y: (frame.height - capsuleHeight) / 2,
+            width: capsuleWidth,
+            height: capsuleHeight
+        ))
+        capsule.material = .hudWindow
+        capsule.blendingMode = .withinWindow
+        capsule.state = .active
+        capsule.wantsLayer = true
+        capsule.layer?.cornerRadius = capsuleHeight / 2
+        capsule.layer?.masksToBounds = true
+        capsule.layer?.borderWidth = 0.5
+        capsule.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.15).cgColor
+        view.addSubview(capsule)
+
+        let iconSize: CGFloat = 12
         let iconView = NSImageView(frame: NSRect(
-            x: (frame.width - iconSize) / 2,
-            y: (frame.height - iconSize) / 2,
+            x: (capsuleWidth - iconSize) / 2,
+            y: (capsuleHeight - iconSize) / 2,
             width: iconSize,
             height: iconSize
         ))
         if let img = NSImage(systemSymbolName: chevronName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: 8, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
             iconView.image = img.withSymbolConfiguration(config)
         }
-        iconView.contentTintColor = .tertiaryLabelColor
-        view.addSubview(iconView)
+        iconView.contentTintColor = .labelColor
+        capsule.addSubview(iconView)
 
         return view
+    }
+
+    private func updateQueueScrollIndicators() {
+        guard let scrollView = queueScrollView,
+              let documentView = scrollView.documentView else { return }
+
+        let clipBounds = scrollView.contentView.bounds
+        let contentHeight = documentView.frame.height
+        let viewHeight = scrollView.frame.height
+
+        topIndicator?.isHidden = clipBounds.origin.y <= 0
+        bottomIndicator?.isHidden = clipBounds.origin.y + viewHeight >= contentHeight - 1
     }
 
     @objc private func queueDidScroll(_ notification: Notification) {
         guard let scrollView = queueScrollView,
               let documentView = scrollView.documentView else { return }
 
-        let clipBounds = scrollView.contentView.bounds
-        lastQueueScrollOffset = clipBounds.origin.y
-        let contentHeight = documentView.frame.height
-        let viewHeight = scrollView.frame.height
-
-        let atTop = clipBounds.origin.y <= 0
-        let atBottom = clipBounds.origin.y + viewHeight >= contentHeight - 1
-
-        topIndicator?.isHidden = atTop
-        bottomIndicator?.isHidden = atBottom
+        lastQueueScrollOffset = scrollView.contentView.bounds.origin.y
+        updateQueueScrollIndicators()
 
         // 捲動時列在動、滑鼠沒動，NSTrackingArea 不會送 mouseExited，
         // 用實際滑鼠位置同步每一列的 hover 狀態，避免殘留高亮

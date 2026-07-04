@@ -33,6 +33,7 @@ Swift / SPM，macOS 13+ 原生 App（WKWebView 包 YouTube Music）。
 - **SmokeTests 依賴 YTMusicCore 的 public API**（`JavaScriptBridge.script(for:)`、`monitorScript`、`ArtworkRequestTracker`），改名或改存取層級前先看 `SmokeTests/main.swift`。
 - **選單即時更新**：`refreshMenuContentsIfVisible()` 在 menu 開啟時整份重建，會重設 hover 與捲動狀態；捲動位置靠 `lastQueueScrollOffset` 還原，新增有狀態的 view 時要考慮重建。
 - **捲軸佔位空隙**：捲軸隱藏後右側仍留白，是 YT Music 用 CSS 變數 `--ytmusic-scrollbar-width: 12px` 保留的空間，注入 `html { --ytmusic-scrollbar-width: 0px !important; }` 歸零（已在 WebView.swift 的 hideScrollbarScript 內）。
-- **紅綠燈疊到網頁 header**：`ignoresSafeArea` 後 YT Music 的 nav bar 延伸到標題列下，會被視窗紅綠燈蓋住，注入 `ytmusic-nav-bar { padding-left: 72px !important; }` 右移避開。注入的 CSS 一律要加 `!important`：user script 的 style 在 YTM stylesheet 之前載入，同 specificity 時會輸。
+- **紅綠燈疊到網頁 header**：`ignoresSafeArea` 後 YT Music 的 nav bar 延伸到標題列下，會被視窗紅綠燈蓋住。解法：YTM 版面高度綁在 `--ytmusic-nav-bar-height`（預設 64px）變數上，注入 `html { --ytmusic-nav-bar-height: 92px !important; }` + `ytmusic-nav-bar { padding-top: 28px !important; }` 把內容下移到紅綠燈正下方，其餘區塊會自動跟著位移。注入的 CSS 一律要加 `!important`：user script 的 style 在 YTM stylesheet 之前載入，同 specificity 時會輸。
+- **視窗拖曳**：標題列透明化後頂部是 WKWebView，會吞滑鼠事件。`mouseDownCanMoveWindow` 實測不可靠，要在自訂 view 的 `mouseDown` 直接呼叫 `window.performDrag(with:)`（AppDelegate 的 `WindowDragStripView`，高度需與 nav bar 上方留白一致，目前 28pt）。
 - **Menu bar 圖示**：`makeStatusIcon()` 用 NSBezierPath 畫 YT Music 風格（圓形挖空播放三角），必須 `isTemplate = true` 才會自動配合 menu bar 深淺色。
 - **捲動時 hover 殘留**：NSScrollView 捲動時是「列在動、滑鼠沒動」，NSTrackingArea 不會對捲走的列送 `mouseExited`，hover 高亮會殘留。必須在 `boundsDidChangeNotification`（`queueDidScroll`）裡用 `window.mouseLocationOutsideOfEventStream` 對每一列 `syncHover` 校正。

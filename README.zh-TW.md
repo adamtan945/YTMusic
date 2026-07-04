@@ -65,8 +65,7 @@ Sources/
 │   └── WebView.swift           # WKWebView 封裝 + Google 登入
 ├── Services/
 │   ├── MenuBarService.swift    # Menu Bar 圖示 + 控制
-│   ├── NowPlayingService.swift # 歌曲切換通知
-│   └── MediaKeyService.swift   # 媒體鍵佔位
+│   └── NowPlayingService.swift # 歌曲切換通知
 └── Helpers/
     └── JavaScriptBridge.swift  # JS ↔ Swift 通訊橋接
 SmokeTests/

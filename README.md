@@ -65,8 +65,7 @@ Sources/
 │   └── WebView.swift           # WKWebView wrapper + Google login
 ├── Services/
 │   ├── MenuBarService.swift    # Menu bar icon + controls
-│   ├── NowPlayingService.swift # Song change notifications
-│   └── MediaKeyService.swift   # Media key placeholder
+│   └── NowPlayingService.swift # Song change notifications
 └── Helpers/
     └── JavaScriptBridge.swift  # JS ↔ Swift communication
 SmokeTests/

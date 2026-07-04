@@ -21,9 +21,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // 啟動 Menu Bar 常駐圖示
         menuBarService = MenuBarService.shared
 
-        // 啟動媒體鍵服務
-        _ = MediaKeyService.shared
-
         // 讓 App 顯示在前景
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -78,7 +75,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         hostingView.autoresizingMask = [.width, .height]
         container.addSubview(hostingView)
 
-        let dragStripHeight: CGFloat = 24
+        let dragStripHeight: CGFloat = 28
         let dragStrip = WindowDragStripView(frame: NSRect(
             x: 0,
             y: container.bounds.height - dragStripHeight,
@@ -131,7 +128,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// 透明拖曳區：mouseDown 直接交給視窗移動
+/// 透明拖曳區：mouseDown 直接啟動視窗拖曳
 final class WindowDragStripView: NSView {
     override var mouseDownCanMoveWindow: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
 }

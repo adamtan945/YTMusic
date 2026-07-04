@@ -97,9 +97,11 @@ class WebViewManager: NSObject, ObservableObject {
                     '* { scrollbar-width: none !important; -ms-overflow-style: none !important; }',
                     /* YT Music 用此變數幫捲軸保留 12px 空位，捲軸已隱藏所以歸零 */
                     'html { --ytmusic-scrollbar-width: 0px !important; }',
-                    /* 視窗紅綠燈疊在網頁 header 上，把 nav bar 內容右移避開；
-                       不加 !important 會被 YTM 較晚載入的 stylesheet 蓋掉 */
-                    'ytmusic-nav-bar { padding-left: 72px !important; }'
+                    /* 視窗紅綠燈疊在網頁 header 上：把 nav bar 加高 28px、內容下移到紅綠燈正下方。
+                       版面高度綁在 --ytmusic-nav-bar-height 變數上，改變數其餘區塊會自動跟著位移。
+                       注入的 CSS 一律加 !important，否則會被 YTM 較晚載入的 stylesheet 蓋掉 */
+                    'html { --ytmusic-nav-bar-height: 92px !important; }',
+                    'ytmusic-nav-bar { padding-top: 28px !important; }'
                 ].join(' ');
 
                 function makeStyle() {
