@@ -1,4 +1,4 @@
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)

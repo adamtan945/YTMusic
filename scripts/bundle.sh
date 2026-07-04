@@ -4,8 +4,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="YTMusic"
-VERSION="1.1.0"
-BUILD_NUMBER="2"
+VERSION="1.2.0"
+BUILD_NUMBER="3"
 BUNDLE_DIR="$PROJECT_DIR/build/${APP_NAME}.app"
 CONTENTS_DIR="$BUNDLE_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"

@@ -1,5 +1,53 @@
 # Changelog
 
+## [1.2.0] - 2026-07-04
+
+### Added
+- YouTube Music style menu bar status icon (circle with play triangle, template image)
+- Glass-card now playing panel in the menu bar: 88px artwork, single control row (shuffle / previous / play / next / repeat), progress and volume sliders
+- Full-row hover and click-to-play on the menu bar queue, with speaker icon on the currently playing row
+- Transparent drag strip above the web content so the borderless window can be moved
+- Capsule scroll indicators on the menu bar queue that hide at the top and bottom edges
+- Ad-hoc codesign in the bundle script so Finder and Dock show the app icon
+
+### Changed
+- Window chrome is now fully borderless dark: web content extends under the transparent titlebar
+- YouTube Music nav bar is pushed 28px down so the hamburger menu sits below the traffic light buttons
+- Queue is sourced from a single `ytmusic-player-queue` container, keeping legitimate duplicate songs while dropping cross-render copies
+
+### Fixed
+- White strip above the web content caused by SwiftUI safe area insets
+- Scrollbars showing inside the player bar and queue panels (CSS now reaches shadow DOM via `attachShadow` patch)
+- 12px gap reserved for the hidden scrollbar (`--ytmusic-scrollbar-width` reset to 0)
+- Menu bar queue showing duplicated rows (song/video counterpart renderers) or a single row in video mode
+- Hover highlight lingering on queue rows while scrolling
+
+### Removed
+- Unused `MediaKeyService` placeholder (media keys are handled by the WebView MediaSession)
+
+### 新增
+- Menu Bar 常駐圖示改為 YouTube Music 風格（圓形＋播放三角，template 圖自動配合深淺色）
+- Menu Bar 播放中區塊改為玻璃卡片：88px 封面、單列控制鍵（隨機／上一首／播放／下一首／重複）、進度與音量滑桿
+- 待播清單整列 hover 與點擊跳播，正在播放列顯示喇叭圖示
+- 網頁內容上方新增透明拖曳區，無邊框視窗可拖動
+- 待播清單上下新增膠囊捲動指示器，捲到頂／底自動隱藏
+- bundle script 加入 ad-hoc 簽名，Finder 與 Dock 正常顯示 app icon
+
+### 變更
+- 視窗外框改為全深色無邊框：網頁內容延伸到透明標題列下方
+- YouTube Music nav bar 下移 28px，漢堡選單落在紅綠燈正下方
+- 待播清單改以單一 `ytmusic-player-queue` 容器為來源，保留合法重複歌曲、去除跨區重複渲染
+
+### 修正
+- SwiftUI safe area 造成網頁內容上方的白色橫條
+- 播放列與待播清單面板出現捲軸（透過 patch `attachShadow` 讓 CSS 進入 shadow DOM）
+- 捲軸隱藏後仍保留的 12px 空隙（`--ytmusic-scrollbar-width` 歸零）
+- Menu Bar 待播清單重複列（歌曲／影片雙版本渲染）與影片模式下只剩一列的問題
+- 捲動時待播清單 hover 高亮殘留
+
+### 移除
+- 未使用的 `MediaKeyService` 佔位（媒體鍵由 WebView MediaSession 處理）
+
 ## [1.1.0] - 2026-04-02
 
 ### Added
