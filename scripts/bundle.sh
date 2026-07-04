@@ -66,6 +66,11 @@ PLIST
 echo "🎨 Generating icon..."
 python3 "$PROJECT_DIR/scripts/generate_icon.py"
 
+# Ad-hoc 簽名：未簽名的 bundle Finder/Dock 可能不顯示 icon
+echo "🔏 Codesigning (ad-hoc)..."
+codesign --force --deep --sign - "$BUNDLE_DIR"
+touch "$BUNDLE_DIR"
+
 echo "✅ Bundle created at: $BUNDLE_DIR"
 echo "   Run with: open \"$BUNDLE_DIR\""
 echo "   Install:  cp -R \"$BUNDLE_DIR\" /Applications/"

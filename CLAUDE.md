@@ -1,1 +1,1 @@
-AGENTS.md
+CORE_RULES.md

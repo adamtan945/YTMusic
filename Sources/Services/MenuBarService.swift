@@ -33,7 +33,8 @@ class MenuBarService: NSObject, NSMenuDelegate {
     private weak var bottomIndicator: NSView?
     private var lastQueueScrollOffset: CGFloat = 0
 
-    private let menuWidth: CGFloat = 300
+    private let menuWidth: CGFloat = 320
+    private let cardMargin: CGFloat = 10
     private var isMenuOpen = false
     private var queueRefreshWorkItem: DispatchWorkItem?
 
@@ -47,12 +48,38 @@ class MenuBarService: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: "YTMusic")
+            button.image = makeStatusIcon()
         }
 
         let menu = NSMenu()
         menu.delegate = self
         statusItem?.menu = menu
+    }
+
+    /// YouTube Music 風格圖示：實心圓形中央挖空播放三角（template 圖，自動配合深淺色 menu bar）
+    private func makeStatusIcon() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5))
+            NSColor.black.setFill()
+            circle.fill()
+
+            ctx.setBlendMode(.destinationOut)
+            let triangle = NSBezierPath()
+            triangle.move(to: NSPoint(x: 7.2, y: 5.9))
+            triangle.line(to: NSPoint(x: 7.2, y: 12.1))
+            triangle.line(to: NSPoint(x: 12.8, y: 9))
+            triangle.close()
+            NSColor.black.setFill()
+            triangle.fill()
+            ctx.setBlendMode(.normal)
+
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - NSMenuDelegate — 每次開啟時重建 menu 內容
@@ -81,22 +108,14 @@ class MenuBarService: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         menu.minimumWidth = menuWidth
 
-        // Now Playing 區
+        // Now Playing 玻璃卡片
+        let playerItem = NSMenuItem()
         if let track = currentTrack, !track.title.isEmpty {
-            let nowPlayingItem = NSMenuItem()
-            nowPlayingItem.view = createNowPlayingView(track: track)
-            menu.addItem(nowPlayingItem)
-            menu.addItem(NSMenuItem.separator())
+            playerItem.view = createPlayerCardView(track: track)
+        } else {
+            playerItem.view = createEmptyPlayerView()
         }
-
-        // 音量 + 功能鍵區
-        let volumeItem = NSMenuItem()
-        volumeItem.view = createVolumeView()
-        menu.addItem(volumeItem)
-
-        let toggleItem = NSMenuItem()
-        toggleItem.view = createToggleButtonsView()
-        menu.addItem(toggleItem)
+        menu.addItem(playerItem)
         menu.addItem(NSMenuItem.separator())
 
         // 待播清單區
@@ -190,8 +209,7 @@ class MenuBarService: NSObject, NSMenuDelegate {
 
         JavaScriptBridge.shared.onQueueUpdated = { [weak self] items in
             DispatchQueue.main.async {
-                let summary = items.prefix(5).map { "\($0.title) | \($0.artist) | playing=\($0.isPlaying)" }.joined(separator: " || ")
-                debugConsole("[MenuBar] onQueueUpdated count=\(items.count) \(summary)")
+                debugConsole("[MenuBar] onQueueUpdated count=\(items.count)")
                 self?.queueItems = items
                 self?.loadQueueThumbnails(items)
                 self?.refreshMenuContentsIfVisible()
@@ -213,7 +231,7 @@ class MenuBarService: NSObject, NSMenuDelegate {
         guard let button = playButton else { return }
         let symbolName = isPlaying ? "pause.fill" : "play.fill"
         if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
             button.image = image.withSymbolConfiguration(config)
         }
     }
@@ -235,10 +253,8 @@ class MenuBarService: NSObject, NSMenuDelegate {
 
     private func scheduleQueueRefresh(delay: TimeInterval = 0.35) {
         queueRefreshWorkItem?.cancel()
-        debugConsole("[MenuBar] scheduleQueueRefresh delay=\(delay)")
 
         let workItem = DispatchWorkItem {
-            debugConsole("[MenuBar] execute fetchQueue")
             JavaScriptBridge.executeCommand(.fetchQueue)
         }
         queueRefreshWorkItem = workItem
@@ -278,178 +294,199 @@ class MenuBarService: NSObject, NSMenuDelegate {
         }.resume()
     }
 
-    // MARK: - Now Playing 區
+    // MARK: - Now Playing 玻璃卡片
 
-    private func createNowPlayingView(track: TrackInfo) -> NSView {
-        let padding: CGFloat = 12
-        let artSize: CGFloat = 100
-        let viewHeight: CGFloat = artSize + padding * 2
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: viewHeight))
+    private func createGlassCard(height: CGFloat) -> (container: NSView, card: NSView) {
+        let cardWidth = menuWidth - cardMargin * 2
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: height + 12))
 
-        let rightX = padding + artSize + 12
-        let rightWidth = menuWidth - rightX - padding
+        let card = NSVisualEffectView(frame: NSRect(x: cardMargin, y: 6, width: cardWidth, height: height))
+        card.material = .hudWindow
+        card.blendingMode = .withinWindow
+        card.state = .active
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 12
+        card.layer?.cornerCurve = .continuous
+        card.layer?.masksToBounds = true
+        card.layer?.borderWidth = 0.5
+        card.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        container.addSubview(card)
 
-        // 封面圖 100x100 左側
-        let imageView = NSImageView(frame: NSRect(x: padding, y: padding, width: artSize, height: artSize))
+        return (container, card)
+    }
+
+    private func createEmptyPlayerView() -> NSView {
+        let (container, card) = createGlassCard(height: 56)
+
+        let icon = NSImageView(frame: NSRect(x: 16, y: 16, width: 24, height: 24))
+        icon.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 18, weight: .regular))
+        icon.contentTintColor = .tertiaryLabelColor
+        card.addSubview(icon)
+
+        let label = NSTextField(labelWithString: "尚未播放任何內容")
+        label.frame = NSRect(x: 52, y: 20, width: 200, height: 16)
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        card.addSubview(label)
+
+        return container
+    }
+
+    private func createPlayerCardView(track: TrackInfo) -> NSView {
+        let cardHeight: CGFloat = 208
+        let (container, card) = createGlassCard(height: cardHeight)
+        let cardWidth = card.frame.width
+        let padding: CGFloat = 14
+        let artSize: CGFloat = 88
+
+        // 封面圖（左上）
+        let imageView = NSImageView(frame: NSRect(x: padding, y: cardHeight - padding - artSize, width: artSize, height: artSize))
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.wantsLayer = true
         imageView.layer?.cornerRadius = 8
+        imageView.layer?.cornerCurve = .continuous
         imageView.layer?.masksToBounds = true
         imageView.image = currentArtwork ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
-        view.addSubview(imageView)
+        card.addSubview(imageView)
         self.artworkView = imageView
 
-        // 歌名
-        let titleY = padding + artSize - 18
+        // 歌名 / 歌手（封面右側）
+        let textX = padding + artSize + 12
+        let textWidth = cardWidth - textX - padding
+
         let titleLabel = NSTextField(labelWithString: track.title)
-        titleLabel.frame = NSRect(x: rightX, y: titleY, width: rightWidth, height: 18)
-        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        titleLabel.frame = NSRect(x: textX, y: cardHeight - padding - 22, width: textWidth, height: 18)
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
-        view.addSubview(titleLabel)
+        card.addSubview(titleLabel)
         self.titleLabel = titleLabel
 
-        // 歌手
-        let artistY = titleY - 16
         let artistLabel = NSTextField(labelWithString: track.artist)
-        artistLabel.frame = NSRect(x: rightX, y: artistY, width: rightWidth, height: 14)
+        artistLabel.frame = NSRect(x: textX, y: cardHeight - padding - 40, width: textWidth, height: 15)
         artistLabel.font = NSFont.systemFont(ofSize: 11)
         artistLabel.textColor = .secondaryLabelColor
         artistLabel.lineBreakMode = .byTruncatingTail
-        view.addSubview(artistLabel)
+        card.addSubview(artistLabel)
         self.artistLabel = artistLabel
 
-        // 播放控制按鈕
-        let btnSize: CGFloat = 32
-        let btnSpacing: CGFloat = 12
-        let totalBtnWidth = btnSize * 3 + btnSpacing * 2
-        let btnStartX = rightX + (rightWidth - totalBtnWidth) / 2
-        let btnY = artistY - btnSize - 4
-
-        let prevButton = createSymbolButton(
-            symbolName: "backward.fill",
-            frame: NSRect(x: btnStartX, y: btnY, width: btnSize, height: btnSize),
-            action: #selector(previousClicked),
-            fontSize: 13
-        )
-        view.addSubview(prevButton)
-
-        let playSymbol = isPlaying ? "pause.fill" : "play.fill"
-        let playBtn = createSymbolButton(
-            symbolName: playSymbol,
-            frame: NSRect(x: btnStartX + btnSize + btnSpacing, y: btnY, width: btnSize, height: btnSize),
-            action: #selector(playPauseClicked),
-            fontSize: 18
-        )
-        view.addSubview(playBtn)
-        self.playButton = playBtn
-
-        let nextButton = createSymbolButton(
-            symbolName: "forward.fill",
-            frame: NSRect(x: btnStartX + (btnSize + btnSpacing) * 2, y: btnY, width: btnSize, height: btnSize),
-            action: #selector(nextClicked),
-            fontSize: 13
-        )
-        view.addSubview(nextButton)
-
         // 進度條 + 時間
-        let timeWidth: CGFloat = 38
-        let progressY = padding
+        let timeWidth: CGFloat = 34
+        let progressY: CGFloat = 82
 
         let elapsed = NSTextField(labelWithString: formatTime(currentTime))
-        elapsed.frame = NSRect(x: rightX, y: progressY, width: timeWidth, height: 12)
+        elapsed.frame = NSRect(x: padding, y: progressY, width: timeWidth, height: 12)
         elapsed.font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
         elapsed.textColor = .secondaryLabelColor
         elapsed.alignment = .left
-        view.addSubview(elapsed)
+        card.addSubview(elapsed)
         self.elapsedLabel = elapsed
 
-        let sliderX = rightX + timeWidth + 2
-        let sliderWidth = rightWidth - timeWidth * 2 - 4
-        let slider = NSSlider(frame: NSRect(x: sliderX, y: progressY - 2, width: sliderWidth, height: 16))
+        let sliderX = padding + timeWidth + 4
+        let slider = NSSlider(frame: NSRect(x: sliderX, y: progressY - 3, width: cardWidth - sliderX - padding - timeWidth - 4, height: 16))
+        slider.controlSize = .mini
         slider.minValue = 0
         slider.maxValue = max(duration, 1)
         slider.doubleValue = currentTime
         slider.target = self
         slider.action = #selector(progressSliderChanged(_:))
         slider.isContinuous = true
-        view.addSubview(slider)
+        card.addSubview(slider)
         self.progressSlider = slider
 
         let remaining = max(0, duration - currentTime)
         let remain = NSTextField(labelWithString: "-\(formatTime(remaining))")
-        remain.frame = NSRect(x: rightX + rightWidth - timeWidth, y: progressY, width: timeWidth, height: 12)
+        remain.frame = NSRect(x: cardWidth - padding - timeWidth, y: progressY, width: timeWidth, height: 12)
         remain.font = NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .regular)
         remain.textColor = .secondaryLabelColor
         remain.alignment = .right
-        view.addSubview(remain)
+        card.addSubview(remain)
         self.remainLabel = remain
 
-        return view
-    }
+        // 控制列：shuffle / 上一首 / 播放 / 下一首 / repeat
+        let controlsCenterY: CGFloat = 56
+        let sizes: [CGFloat] = [28, 30, 40, 30, 28]
+        let spacing: CGFloat = 16
+        let totalWidth = sizes.reduce(0, +) + spacing * CGFloat(sizes.count - 1)
+        var x = (cardWidth - totalWidth) / 2
 
-    // MARK: - 音量 + Toggle 區
-
-    private func createVolumeView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 30))
-        let padding: CGFloat = 16
-        let iconSize: CGFloat = 16
-
-        let smallIcon = NSImageView(frame: NSRect(x: padding, y: 7, width: iconSize, height: iconSize))
-        smallIcon.image = NSImage(systemSymbolName: "speaker.wave.1.fill", accessibilityDescription: "音量小")
-        smallIcon.contentTintColor = .secondaryLabelColor
-        view.addSubview(smallIcon)
-
-        let sliderX = padding + iconSize + 8
-        let sliderWidth = menuWidth - sliderX - padding - iconSize - 8
-        let slider = NSSlider(frame: NSRect(x: sliderX, y: 5, width: sliderWidth, height: 20))
-        slider.minValue = 0
-        slider.maxValue = 1
-        slider.doubleValue = Double(volume)
-        slider.target = self
-        slider.action = #selector(volumeSliderChanged(_:))
-        slider.isContinuous = true
-        view.addSubview(slider)
-
-        let largeIcon = NSImageView(frame: NSRect(x: menuWidth - padding - iconSize, y: 7, width: iconSize, height: iconSize))
-        largeIcon.image = NSImage(systemSymbolName: "speaker.wave.3.fill", accessibilityDescription: "音量大")
-        largeIcon.contentTintColor = .secondaryLabelColor
-        view.addSubview(largeIcon)
-
-        return view
-    }
-
-    private func createToggleButtonsView() -> NSView {
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: 44))
-
-        let buttonSize: CGFloat = 44
-        let spacing: CGFloat = 32
-        let totalWidth = buttonSize * 2 + spacing
-        let startX = (menuWidth - totalWidth) / 2
-
-        let repeatSymbol = repeatState == "one" ? "repeat.1" : "repeat"
-        let repeatButton = createSymbolButton(
-            symbolName: repeatSymbol,
-            frame: NSRect(x: startX, y: 0, width: buttonSize, height: buttonSize),
-            action: #selector(repeatClicked),
-            fontSize: 14
-        )
-        if repeatState != "none" {
-            repeatButton.contentTintColor = .controlAccentColor
-        }
-        view.addSubview(repeatButton)
-
-        let shuffleButton = createSymbolButton(
-            symbolName: "shuffle",
-            frame: NSRect(x: startX + buttonSize + spacing, y: 0, width: buttonSize, height: buttonSize),
-            action: #selector(shuffleClicked),
-            fontSize: 14
+        let shuffleButton = HoverSymbolButton(
+            symbolName: "shuffle", pointSize: 12,
+            frame: NSRect(x: x, y: controlsCenterY - sizes[0] / 2, width: sizes[0], height: sizes[0]),
+            target: self, action: #selector(shuffleClicked)
         )
         if shuffleEnabled {
             shuffleButton.contentTintColor = .controlAccentColor
         }
-        view.addSubview(shuffleButton)
+        card.addSubview(shuffleButton)
+        x += sizes[0] + spacing
 
-        return view
+        let prevButton = HoverSymbolButton(
+            symbolName: "backward.fill", pointSize: 13,
+            frame: NSRect(x: x, y: controlsCenterY - sizes[1] / 2, width: sizes[1], height: sizes[1]),
+            target: self, action: #selector(previousClicked)
+        )
+        card.addSubview(prevButton)
+        x += sizes[1] + spacing
+
+        let playBtn = HoverSymbolButton(
+            symbolName: isPlaying ? "pause.fill" : "play.fill", pointSize: 17,
+            frame: NSRect(x: x, y: controlsCenterY - sizes[2] / 2, width: sizes[2], height: sizes[2]),
+            target: self, action: #selector(playPauseClicked)
+        )
+        playBtn.normalBackgroundColor = NSColor.labelColor.withAlphaComponent(0.1)
+        playBtn.hoverBackgroundColor = NSColor.labelColor.withAlphaComponent(0.18)
+        card.addSubview(playBtn)
+        self.playButton = playBtn
+        x += sizes[2] + spacing
+
+        let nextButton = HoverSymbolButton(
+            symbolName: "forward.fill", pointSize: 13,
+            frame: NSRect(x: x, y: controlsCenterY - sizes[3] / 2, width: sizes[3], height: sizes[3]),
+            target: self, action: #selector(nextClicked)
+        )
+        card.addSubview(nextButton)
+        x += sizes[3] + spacing
+
+        let repeatButton = HoverSymbolButton(
+            symbolName: repeatState == "one" ? "repeat.1" : "repeat", pointSize: 12,
+            frame: NSRect(x: x, y: controlsCenterY - sizes[4] / 2, width: sizes[4], height: sizes[4]),
+            target: self, action: #selector(repeatClicked)
+        )
+        if repeatState != "none" {
+            repeatButton.contentTintColor = .controlAccentColor
+        }
+        card.addSubview(repeatButton)
+
+        // 音量列
+        let volumeIconSize: CGFloat = 14
+        let volumeY: CGFloat = 14
+
+        let smallIcon = NSImageView(frame: NSRect(x: padding, y: volumeY, width: volumeIconSize, height: volumeIconSize))
+        smallIcon.image = NSImage(systemSymbolName: "speaker.fill", accessibilityDescription: "音量小")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .medium))
+        smallIcon.contentTintColor = .secondaryLabelColor
+        card.addSubview(smallIcon)
+
+        let volSliderX = padding + volumeIconSize + 8
+        let volSliderWidth = cardWidth - volSliderX - padding - volumeIconSize - 8
+        let volSlider = NSSlider(frame: NSRect(x: volSliderX, y: volumeY - 2, width: volSliderWidth, height: 16))
+        volSlider.controlSize = .small
+        volSlider.minValue = 0
+        volSlider.maxValue = 1
+        volSlider.doubleValue = Double(volume)
+        volSlider.target = self
+        volSlider.action = #selector(volumeSliderChanged(_:))
+        volSlider.isContinuous = true
+        card.addSubview(volSlider)
+
+        let largeIcon = NSImageView(frame: NSRect(x: cardWidth - padding - volumeIconSize, y: volumeY, width: volumeIconSize, height: volumeIconSize))
+        largeIcon.image = NSImage(systemSymbolName: "speaker.wave.3.fill", accessibilityDescription: "音量大")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .medium))
+        largeIcon.contentTintColor = .secondaryLabelColor
+        card.addSubview(largeIcon)
+
+        return container
     }
 
     // MARK: - 待播清單區
@@ -468,7 +505,7 @@ class MenuBarService: NSObject, NSMenuDelegate {
 
     private func createQueueView() -> NSView {
         let rowHeight: CGFloat = 52
-        let maxVisible = 5
+        let maxVisible = 6
         let visibleHeight = min(CGFloat(queueItems.count), CGFloat(maxVisible)) * rowHeight
         let indicatorHeight: CGFloat = 16
 
@@ -486,8 +523,20 @@ class MenuBarService: NSObject, NSMenuDelegate {
         let documentView = FlippedView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: totalHeight))
 
         for (index, item) in queueItems.enumerated() {
-            let rowView = createQueueRow(item: item, index: index, rowHeight: rowHeight)
-            rowView.frame = NSRect(x: 0, y: CGFloat(index) * rowHeight, width: menuWidth, height: rowHeight)
+            let rowView = QueueRowView(frame: NSRect(x: 0, y: CGFloat(index) * rowHeight, width: menuWidth, height: rowHeight))
+            rowView.configure(
+                item: item,
+                thumbnail: queueThumbnail(for: item),
+                isCurrent: item.isPlaying,
+                isPlayerPlaying: isPlaying
+            )
+            rowView.onActivate = { [weak self] in
+                if item.isPlaying {
+                    JavaScriptBridge.executeCommand(.playPause)
+                } else {
+                    self?.playQueueItem(at: index)
+                }
+            }
             documentView.addSubview(rowView)
         }
 
@@ -531,63 +580,6 @@ class MenuBarService: NSObject, NSMenuDelegate {
         return container
     }
 
-    private func createQueueRow(item: QueueItem, index: Int, rowHeight: CGFloat) -> NSView {
-        let row = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: rowHeight))
-        let padding: CGFloat = 16
-        let thumbSize: CGFloat = 32
-        let timeWidth: CGFloat = 36
-
-        // 縮圖
-        let artworkFrame = NSRect(x: padding, y: (rowHeight - thumbSize) / 2, width: thumbSize, height: thumbSize)
-        let artworkView = QueueArtworkHoverView(frame: artworkFrame)
-        artworkView.configure(
-            image: queueArtworkImage(for: item),
-            isCurrentlyPlaying: item.isPlaying && isPlaying
-        )
-        artworkView.onActivate = { [weak self] in
-            self?.playQueueItem(at: index)
-        }
-        row.addSubview(artworkView)
-
-        let textX = padding + thumbSize + 8
-        let textWidth = menuWidth - textX - padding - timeWidth - 4
-
-        // 歌名
-        let titleLabel = NSTextField(labelWithString: item.title)
-        titleLabel.frame = NSRect(x: textX, y: rowHeight / 2 + 1, width: textWidth, height: 16)
-        titleLabel.font = item.isPlaying
-            ? NSFont.systemFont(ofSize: 12, weight: .semibold)
-            : NSFont.systemFont(ofSize: 12)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        row.addSubview(titleLabel)
-
-        // 歌手
-        let artistLabel = NSTextField(labelWithString: item.artist)
-        artistLabel.frame = NSRect(x: textX, y: rowHeight / 2 - 15, width: textWidth, height: 14)
-        artistLabel.font = NSFont.systemFont(ofSize: 10)
-        artistLabel.textColor = .secondaryLabelColor
-        artistLabel.lineBreakMode = .byTruncatingTail
-        row.addSubview(artistLabel)
-
-        // 時長
-        if !item.duration.isEmpty {
-            let timeLabel = NSTextField(labelWithString: item.duration)
-            timeLabel.frame = NSRect(x: menuWidth - padding - timeWidth, y: (rowHeight - 14) / 2, width: timeWidth, height: 14)
-            timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-            timeLabel.textColor = .secondaryLabelColor
-            timeLabel.alignment = .right
-            row.addSubview(timeLabel)
-        }
-
-        // 分隔線
-        let separator = NSView(frame: NSRect(x: textX, y: 0, width: menuWidth - textX - padding, height: 0.5))
-        separator.wantsLayer = true
-        separator.layer?.backgroundColor = NSColor.separatorColor.cgColor
-        row.addSubview(separator)
-
-        return row
-    }
-
     // MARK: - ▲▼ 指示器（純圖示，無漸層）
 
     private func createScrollIndicator(frame: NSRect, chevronName: String) -> NSView {
@@ -624,27 +616,18 @@ class MenuBarService: NSObject, NSMenuDelegate {
 
         topIndicator?.isHidden = atTop
         bottomIndicator?.isHidden = atBottom
+
+        // 捲動時列在動、滑鼠沒動，NSTrackingArea 不會送 mouseExited，
+        // 用實際滑鼠位置同步每一列的 hover 狀態，避免殘留高亮
+        if let window = scrollView.window {
+            let mouse = window.mouseLocationOutsideOfEventStream
+            for case let row as QueueRowView in documentView.subviews {
+                row.syncHover(mouseLocationInWindow: mouse)
+            }
+        }
     }
 
     // MARK: - 輔助方法
-
-    private func createSymbolButton(symbolName: String, frame: NSRect, action: Selector, fontSize: CGFloat) -> NSButton {
-        let button = NSButton(frame: frame)
-        button.bezelStyle = .inline
-        button.isBordered = false
-        button.target = self
-        button.action = action
-
-        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .medium)
-            button.image = image.withSymbolConfiguration(config)
-        }
-
-        button.imagePosition = .imageOnly
-        button.contentTintColor = .labelColor
-
-        return button
-    }
 
     private func formatTime(_ seconds: Double) -> String {
         guard seconds.isFinite && seconds >= 0 else { return "0:00" }
@@ -653,16 +636,11 @@ class MenuBarService: NSObject, NSMenuDelegate {
         return "\(mins):\(String(format: "%02d", secs))"
     }
 
-    private func queueArtworkImage(for item: QueueItem) -> NSImage? {
-        if item.isPlaying && isPlaying {
-            return NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: "正在播放")
-        }
-
+    private func queueThumbnail(for item: QueueItem) -> NSImage? {
         if let urlStr = item.thumbnailURL, let cached = queueThumbnails[urlStr] {
             return cached
         }
-
-        return NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
+        return nil
     }
 
     private func loadQueueThumbnails(_ items: [QueueItem]) {
@@ -715,11 +693,6 @@ class MenuBarService: NSObject, NSMenuDelegate {
         JavaScriptBridge.executeCommand(.toggleShuffle)
     }
 
-    @objc private func queueItemClicked(_ sender: NSButton) {
-        let index = sender.tag
-        playQueueItem(at: index)
-    }
-
     private func playQueueItem(at index: Int) {
         JavaScriptBridge.executeCommand(.playQueueItem(index))
     }
@@ -741,13 +714,71 @@ class FlippedView: NSView {
     override var isFlipped: Bool { true }
 }
 
-final class QueueArtworkHoverView: NSView {
-    private let imageView = NSImageView()
-    private let overlayButtonView = NSView()
-    private let iconView = NSImageView()
-    private var trackingAreaRef: NSTrackingArea?
+// MARK: - 圓形 hover 背景的符號按鈕
+
+final class HoverSymbolButton: NSButton {
+    var normalBackgroundColor: NSColor = .clear {
+        didSet { layer?.backgroundColor = normalBackgroundColor.cgColor }
+    }
+    var hoverBackgroundColor: NSColor = NSColor.labelColor.withAlphaComponent(0.12)
+    private var hoverTracking: NSTrackingArea?
+
+    convenience init(symbolName: String, pointSize: CGFloat, frame: NSRect, target: AnyObject?, action: Selector?) {
+        self.init(frame: frame)
+        isBordered = false
+        bezelStyle = .regularSquare
+        imagePosition = .imageOnly
+        wantsLayer = true
+        layer?.cornerRadius = frame.height / 2
+        layer?.masksToBounds = true
+        contentTintColor = .labelColor
+        self.target = target
+        self.action = action
+
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+            self.image = image.withSymbolConfiguration(config)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking {
+            removeTrackingArea(hoverTracking)
+        }
+        let tracking = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+        hoverTracking = tracking
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        layer?.backgroundColor = hoverBackgroundColor.cgColor
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        layer?.backgroundColor = normalBackgroundColor.cgColor
+    }
+}
+
+// MARK: - 播放清單列（整列 hover / 點擊跳播）
+
+final class QueueRowView: NSView {
+    private let highlightView = NSView()
+    private let thumbView = NSImageView()
+    private let thumbOverlay = NSView()
+    private let stateIconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let artistLabel = NSTextField(labelWithString: "")
+    private let timeLabel = NSTextField(labelWithString: "")
+    private var rowTracking: NSTrackingArea?
     private var isHovering = false
-    private var isCurrentlyPlaying = false
+    private var isCurrent = false
+    private var isPlayerPlaying = false
     var onActivate: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -760,92 +791,164 @@ final class QueueArtworkHoverView: NSView {
         setup()
     }
 
-    func configure(image: NSImage?, isCurrentlyPlaying: Bool) {
-        self.isCurrentlyPlaying = isCurrentlyPlaying
-        imageView.image = image
-        imageView.contentTintColor = isCurrentlyPlaying ? .controlAccentColor : .tertiaryLabelColor
-        refreshOverlay()
+    private func setup() {
+        let rowHeight = bounds.height
+        let width = bounds.width
+        let padding: CGFloat = 16
+        let thumbSize: CGFloat = 36
+        let timeWidth: CGFloat = 40
+
+        highlightView.frame = NSRect(x: 8, y: 2, width: width - 16, height: rowHeight - 4)
+        highlightView.wantsLayer = true
+        highlightView.layer?.cornerRadius = 8
+        highlightView.layer?.cornerCurve = .continuous
+        highlightView.isHidden = true
+        addSubview(highlightView)
+
+        thumbView.frame = NSRect(x: padding, y: (rowHeight - thumbSize) / 2, width: thumbSize, height: thumbSize)
+        thumbView.imageScaling = .scaleProportionallyUpOrDown
+        thumbView.wantsLayer = true
+        thumbView.layer?.cornerRadius = 6
+        thumbView.layer?.cornerCurve = .continuous
+        thumbView.layer?.masksToBounds = true
+        thumbView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+        addSubview(thumbView)
+
+        thumbOverlay.frame = thumbView.frame
+        thumbOverlay.wantsLayer = true
+        thumbOverlay.layer?.cornerRadius = 6
+        thumbOverlay.layer?.cornerCurve = .continuous
+        thumbOverlay.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+        thumbOverlay.isHidden = true
+        addSubview(thumbOverlay)
+
+        let iconSize: CGFloat = 16
+        stateIconView.frame = NSRect(
+            x: thumbView.frame.midX - iconSize / 2,
+            y: thumbView.frame.midY - iconSize / 2,
+            width: iconSize,
+            height: iconSize
+        )
+        stateIconView.contentTintColor = .white
+        stateIconView.isHidden = true
+        addSubview(stateIconView)
+
+        let textX = padding + thumbSize + 10
+        let textWidth = width - textX - padding - timeWidth - 4
+
+        titleLabel.frame = NSRect(x: textX, y: rowHeight / 2 + 2, width: textWidth, height: 16)
+        titleLabel.font = NSFont.systemFont(ofSize: 12)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        addSubview(titleLabel)
+
+        artistLabel.frame = NSRect(x: textX, y: rowHeight / 2 - 15, width: textWidth, height: 14)
+        artistLabel.font = NSFont.systemFont(ofSize: 10)
+        artistLabel.textColor = .secondaryLabelColor
+        artistLabel.lineBreakMode = .byTruncatingTail
+        addSubview(artistLabel)
+
+        timeLabel.frame = NSRect(x: width - padding - timeWidth, y: (rowHeight - 14) / 2, width: timeWidth, height: 14)
+        timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        timeLabel.textColor = .secondaryLabelColor
+        timeLabel.alignment = .right
+        addSubview(timeLabel)
+    }
+
+    func configure(item: QueueItem, thumbnail: NSImage?, isCurrent: Bool, isPlayerPlaying: Bool) {
+        self.isCurrent = isCurrent
+        self.isPlayerPlaying = isPlayerPlaying
+
+        titleLabel.stringValue = item.title
+        titleLabel.font = isCurrent
+            ? NSFont.systemFont(ofSize: 12, weight: .semibold)
+            : NSFont.systemFont(ofSize: 12)
+        artistLabel.stringValue = item.artist
+        timeLabel.stringValue = item.duration
+
+        if let thumbnail {
+            thumbView.image = thumbnail
+            thumbView.contentTintColor = nil
+        } else {
+            thumbView.image = NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            thumbView.contentTintColor = .tertiaryLabelColor
+        }
+
+        refreshState()
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-
-        if let trackingAreaRef {
-            removeTrackingArea(trackingAreaRef)
+        if let rowTracking {
+            removeTrackingArea(rowTracking)
         }
-
-        let options: NSTrackingArea.Options = [.activeAlways, .mouseEnteredAndExited, .inVisibleRect]
-        let trackingAreaRef = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
-        addTrackingArea(trackingAreaRef)
-        self.trackingAreaRef = trackingAreaRef
+        let tracking = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+        rowTracking = tracking
     }
 
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
-        refreshOverlay()
+        refreshState()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovering = false
-        refreshOverlay()
+        refreshState()
+    }
+
+    /// 依實際滑鼠位置校正 hover 狀態（捲動時 tracking area 不可靠）
+    func syncHover(mouseLocationInWindow point: NSPoint) {
+        let local = convert(point, from: nil)
+        let inside = bounds.contains(local) && visibleRect.contains(local)
+        if inside != isHovering {
+            isHovering = inside
+            refreshState()
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard event.type == .leftMouseUp else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(location) else { return }
         onActivate?()
     }
 
-    private func setup() {
-        wantsLayer = true
-        layer?.cornerRadius = 4
-        layer?.masksToBounds = true
-
-        imageView.frame = bounds
-        imageView.autoresizingMask = [.width, .height]
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(imageView)
-
-        let buttonSize: CGFloat = 24
-        overlayButtonView.frame = NSRect(
-            x: (bounds.width - buttonSize) / 2,
-            y: (bounds.height - buttonSize) / 2,
-            width: buttonSize,
-            height: buttonSize
-        )
-        overlayButtonView.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
-        overlayButtonView.wantsLayer = true
-        overlayButtonView.layer?.cornerRadius = buttonSize / 2
-        overlayButtonView.layer?.masksToBounds = true
-        overlayButtonView.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        overlayButtonView.layer?.borderWidth = 0.5
-        overlayButtonView.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-        overlayButtonView.isHidden = true
-        addSubview(overlayButtonView)
-
-        let iconSize: CGFloat = 12
-        iconView.frame = NSRect(
-            x: (buttonSize - iconSize) / 2,
-            y: (buttonSize - iconSize) / 2,
-            width: iconSize,
-            height: iconSize
-        )
-        iconView.contentTintColor = .white
-        overlayButtonView.addSubview(iconView)
-    }
-
-    private func refreshOverlay() {
-        overlayButtonView.isHidden = !isHovering
-
-        let symbolName: String
-        if isCurrentlyPlaying {
-            symbolName = "pause.fill"
+    private func refreshState() {
+        // 整列 highlight：hover 較亮，正在播放持續淡色
+        if isHovering {
+            highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
+            highlightView.isHidden = false
+        } else if isCurrent {
+            highlightView.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.06).cgColor
+            highlightView.isHidden = false
         } else {
-            symbolName = "play.fill"
+            highlightView.isHidden = true
         }
 
-        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .bold)
-            iconView.image = image.withSymbolConfiguration(config)
+        // 縮圖 overlay：正在播放顯示喇叭；hover 其他列顯示播放鍵
+        let symbolName: String?
+        if isCurrent {
+            symbolName = isPlayerPlaying ? "speaker.wave.2.fill" : "speaker.fill"
+        } else if isHovering {
+            symbolName = "play.fill"
+        } else {
+            symbolName = nil
+        }
+
+        if let symbolName,
+           let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
+            stateIconView.image = image.withSymbolConfiguration(config)
+            stateIconView.isHidden = false
+            thumbOverlay.isHidden = false
+        } else {
+            stateIconView.isHidden = true
+            thumbOverlay.isHidden = true
         }
     }
 }

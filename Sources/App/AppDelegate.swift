@@ -11,24 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // 建立主視窗
-        let contentView = NSHostingView(rootView: ContentView())
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1024, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = contentView
-        window.title = ""
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.styleMask.insert(.fullSizeContentView)
-        window.titlebarSeparatorStyle = .none
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
-        window.minSize = NSSize(width: 800, height: 600)
-        window.isReleasedWhenClosed = false
-        window.center()
+        let window = makeMainWindow()
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
@@ -59,34 +42,55 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func showWindow() {
-        if let window = self.window, window.isVisible || !window.isMiniaturized {
-            window.makeKeyAndOrderFront(nil)
-        } else if let window = self.window {
+        if let window = self.window {
             window.makeKeyAndOrderFront(nil)
         } else {
             // 視窗已被釋放，重新建立
-            let contentView = NSHostingView(rootView: ContentView())
-            let newWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 1024, height: 700),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            newWindow.contentView = contentView
-            newWindow.title = ""
-            newWindow.titlebarAppearsTransparent = true
-            newWindow.titleVisibility = .hidden
-            newWindow.styleMask.insert(.fullSizeContentView)
-            newWindow.titlebarSeparatorStyle = .none
-            newWindow.isMovableByWindowBackground = true
-            newWindow.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
-            newWindow.minSize = NSSize(width: 800, height: 600)
-            newWindow.isReleasedWhenClosed = false
-            newWindow.center()
+            let newWindow = makeMainWindow()
             newWindow.makeKeyAndOrderFront(nil)
             self.window = newWindow
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func makeMainWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1024, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = ""
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1)
+        window.minSize = NSSize(width: 800, height: 600)
+        window.isReleasedWhenClosed = false
+
+        // 標題列透明化後頂部整片都是 WKWebView，會吃掉滑鼠事件導致無法拖動視窗，
+        // 疊一條透明拖曳區在最上方（紅綠燈在另一個圖層，不受影響）
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1024, height: 700))
+        let hostingView = NSHostingView(rootView: ContentView())
+        hostingView.frame = container.bounds
+        hostingView.autoresizingMask = [.width, .height]
+        container.addSubview(hostingView)
+
+        let dragStripHeight: CGFloat = 24
+        let dragStrip = WindowDragStripView(frame: NSRect(
+            x: 0,
+            y: container.bounds.height - dragStripHeight,
+            width: container.bounds.width,
+            height: dragStripHeight
+        ))
+        dragStrip.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(dragStrip)
+
+        window.contentView = container
+        window.center()
+        return window
     }
 
     private func setupMainMenu() {
@@ -125,4 +129,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
     }
+}
+
+/// 透明拖曳區：mouseDown 直接交給視窗移動
+final class WindowDragStripView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
 }

@@ -326,29 +326,32 @@ public final class JavaScriptBridge: NSObject, WKScriptMessageHandler {
         }
 
         function getQueueRows() {
-            const allRows = Array.from(document.querySelectorAll('ytmusic-player-queue-item'));
-            const visibleRows = allRows.filter(isElementVisible);
-            const selectedRow =
-                visibleRows.find(function(row) { return row.hasAttribute('selected'); }) ||
-                allRows.find(function(row) { return row.hasAttribute('selected'); });
+            // 以 selected 列所在的 ytmusic-player-queue 為唯一來源，
+            // 避免同一份 queue 在播放頁與側欄重複渲染造成重複列
+            const selectedRow = document.querySelector('ytmusic-player-queue-item[selected]');
+            const queueRoot =
+                (selectedRow && selectedRow.closest('ytmusic-player-queue')) ||
+                document.querySelector('ytmusic-player-queue') ||
+                document;
 
-            let scopedRows = visibleRows.length > 0 ? visibleRows : allRows;
+            const rawRows = Array.from(queueRoot.querySelectorAll('ytmusic-player-queue-item'));
 
-            if (selectedRow) {
-                let container = selectedRow.parentElement;
-                while (container && container !== document.body) {
-                    const directRows = Array.from(container.children)
-                        .filter(function(child) { return child.matches && child.matches('ytmusic-player-queue-item'); })
-                        .filter(isElementVisible);
-
-                    if (directRows.length > 1) {
-                        scopedRows = directRows;
-                        break;
-                    }
-
-                    container = container.parentElement;
-                }
-            }
+            // 歌曲/影片雙版本 wrapper 會同時渲染 primary 與 counterpart 兩列（同一首歌），
+            // 每個 wrapper 只取顯示中的那列；不在 wrapper 內的列直接保留
+            const seenWrappers = new Set();
+            const scopedRows = [];
+            rawRows.forEach(function(row) {
+                const wrapper = row.closest('ytmusic-playlist-panel-video-wrapper-renderer');
+                if (!wrapper) { scopedRows.push(row); return; }
+                if (seenWrappers.has(wrapper)) return;
+                seenWrappers.add(wrapper);
+                const candidates = Array.from(wrapper.querySelectorAll('ytmusic-player-queue-item'));
+                const chosen =
+                    candidates.find(isElementVisible) ||
+                    candidates.find(function(c) { return c.hasAttribute('selected'); }) ||
+                    candidates[0];
+                if (chosen) scopedRows.push(chosen);
+            });
 
             const items = [];
             let foundSelected = false;
